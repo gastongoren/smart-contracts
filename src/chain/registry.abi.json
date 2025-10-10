@@ -1,0 +1,28 @@
+[
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "contractId", "type": "bytes32" },
+      { "internalType": "uint256", "name": "templateId", "type": "uint256" },
+      { "internalType": "uint256", "name": "version", "type": "uint256" },
+      { "internalType": "bytes32", "name": "hashPdf", "type": "bytes32" },
+      { "internalType": "string", "name": "pointer", "type": "string" },
+      { "internalType": "address[]", "name": "signers", "type": "address[]" }
+    ],
+    "name": "createContract",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "contractId", "type": "bytes32" },
+      { "internalType": "address", "name": "signer", "type": "address" },
+      { "internalType": "bytes32", "name": "hashEvidence", "type": "bytes32" }
+    ],
+    "name": "markSigned",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
+

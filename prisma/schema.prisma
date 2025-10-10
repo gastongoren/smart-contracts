@@ -1,0 +1,69 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Contract {
+  id            String      @id @default(uuid())
+  contractId    String      @unique // bytes32 hex from blockchain
+  tenantId      String
+  templateId    Int
+  version       Int
+  hashPdf       String      // bytes32 hex - hash of the PDF
+  pointer       String?     // S3 key or IPFS hash
+  createdBy     String      // Firebase UID
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  status        String      @default("created") // draft, created, partial_signed, fully_signed
+  txHash        String?     // Blockchain transaction hash
+  signatures    Signature[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("contracts")
+}
+
+model Signature {
+  id              String   @id @default(uuid())
+  contractId      String
+  contract        Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  signerAddress   String   // Ethereum wallet address
+  signerName      String?  // Optional: name of the signer
+  signerEmail     String?  // Optional: email of the signer
+  signedAt        DateTime @default(now())
+  evidenceHash    String   // bytes32 hex - hash of evidence
+  evidence        Json?    // Full evidence JSON (optional, for privacy)
+  txHash          String?  // Blockchain transaction hash
+  
+  @@unique([contractId, signerAddress])
+  @@index([contractId])
+  @@index([signerAddress])
+  @@map("signatures")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  tenantId    String
+  userId      String?  // Firebase UID
+  action      String   // CREATE_CONTRACT, SIGN_CONTRACT, etc.
+  entityType  String   // CONTRACT, SIGNATURE, etc.
+  entityId    String
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
