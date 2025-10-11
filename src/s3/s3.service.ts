@@ -54,7 +54,12 @@ export class S3Service {
 
     // If no S3 client (dev mode), return mock response
     if (!this.client) {
-      const mockUrl = `https://s3.${process.env.AWS_REGION}.amazonaws.com/${tenantCfg.s3Bucket}/${key}`;
+      let mockUrl;
+      if (process.env.R2_PUBLIC_DOMAIN) {
+        mockUrl = `https://${process.env.R2_PUBLIC_DOMAIN}/${key}`;
+      } else {
+        mockUrl = `https://s3.${process.env.AWS_REGION}.amazonaws.com/${tenantCfg.s3Bucket}/${key}`;
+      }
       console.log('⚠️  S3: Mock upload (no credentials)');
       return { key, bucket: tenantCfg.s3Bucket, url: mockUrl, tenantId: reqTenant?.id ?? 'core' };
     }
@@ -71,9 +76,14 @@ export class S3Service {
       );
 
       // Build public URL (adjust based on your R2 configuration)
-      const publicUrl = process.env.AWS_ENDPOINT_URL
-        ? `${process.env.AWS_ENDPOINT_URL}/${tenantCfg.s3Bucket}/${key}`
-        : `https://s3.${process.env.AWS_REGION}.amazonaws.com/${tenantCfg.s3Bucket}/${key}`;
+      let publicUrl;
+      if (process.env.R2_PUBLIC_DOMAIN) {
+        publicUrl = `https://${process.env.R2_PUBLIC_DOMAIN}/${key}`;
+      } else if (process.env.AWS_ENDPOINT_URL) {
+        publicUrl = `${process.env.AWS_ENDPOINT_URL}/${tenantCfg.s3Bucket}/${key}`;
+      } else {
+        publicUrl = `https://s3.${process.env.AWS_REGION}.amazonaws.com/${tenantCfg.s3Bucket}/${key}`;
+      }
 
       return { key, bucket: tenantCfg.s3Bucket, url: publicUrl, tenantId: reqTenant?.id ?? 'core' };
     } catch (error) {
