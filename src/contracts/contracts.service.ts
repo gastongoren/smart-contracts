@@ -54,6 +54,7 @@ export class ContractsService {
         createdBy: user?.uid || 'system',
         txHash: res.txHash,
         status: 'created',
+        requiredSignatures: dto.requiredSignatures || 2, // Default to 2 if not specified
       },
       include: {
         signatures: true,
@@ -105,7 +106,8 @@ export class ContractsService {
 
     // Update contract status
     const signatureCount = contract.signatures.length + 1;
-    const newStatus = signatureCount >= 2 ? 'fully_signed' : 'partial_signed';
+    const requiredSignatures = contract.requiredSignatures;
+    const newStatus = signatureCount >= requiredSignatures ? 'fully_signed' : 'partial_signed';
     
     await this.prisma.contract.update({
       where: { id: contract.id },
@@ -239,6 +241,7 @@ export class ContractsService {
         createdBy: user?.uid || 'system',
         txHash: txResult.txHash,
         status: 'created',
+        requiredSignatures: dto.requiredSignatures || 2, // Default to 2 if not specified
       },
       include: {
         signatures: true,

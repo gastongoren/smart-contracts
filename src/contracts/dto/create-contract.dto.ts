@@ -1,4 +1,4 @@
-import { IsNumber, IsString, Matches, IsOptional, Min } from 'class-validator';
+import { IsNumber, IsString, Matches, IsOptional, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateContractDto {
@@ -46,5 +46,17 @@ export class CreateContractDto {
   @IsOptional()
   @IsString()
   pointer?: string;
+
+  @ApiPropertyOptional({
+    description: 'Number of signatures required for completion (default: 2)',
+    example: 3,
+    minimum: 1,
+    maximum: 10,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(10)
+  requiredSignatures?: number;
 }
 
