@@ -2,9 +2,12 @@
 export * from './tenant';
 
 // Auth
+export * from './auth/auth.module';
+export * from './auth/auth.service';
 export * from './auth/firebase.guard';
 export * from './auth/roles.guard';
 export * from './auth/roles.decorator';
+export * from './auth/dto/register-user.dto';
 
 // Modules
 export * from './s3/s3.module';

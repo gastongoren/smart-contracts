@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
 import { S3Module } from './s3/s3.module';
 import { ContractsModule } from './contracts/contracts.module';
 import { ChainModule } from './chain/chain.module';
@@ -19,6 +20,7 @@ import { ContractsController } from './contracts/contracts.controller';
       limit: 20, // 20 requests per minute
     }]),
     PrismaModule,
+    AuthModule,
     TenantModule.register({ 
       tenants: [
         { 
