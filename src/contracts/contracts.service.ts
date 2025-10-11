@@ -256,5 +256,87 @@ export class ContractsService {
       createdAt: contract.createdAt,
     };
   }
+
+  // Generate temporary download URL for contract PDF
+  async generateDownloadUrl(
+    contractId: string,
+    tenantId?: string,
+    expiresIn: number = 3600,
+  ): Promise<string> {
+    // Find contract
+    const contract = await this.prisma.contract.findFirst({
+      where: {
+        contractId,
+        tenantId: tenantId || 'core',
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException(`Contract ${contractId} not found`);
+    }
+
+    // Generate presigned URL for download
+    const result = await this.s3.createPresignedGetUrl({
+      key: contract.pointer,
+      expiresIn,
+      reqTenant: { id: tenantId || 'core' },
+    });
+
+    return result.url;
+  }
+
+  // Generate public URL (admin only)
+  async generatePublicUrl(
+    contractId: string,
+    tenantId?: string,
+    expiresIn: number = 3600,
+  ) {
+    // Find contract
+    const contract = await this.prisma.contract.findFirst({
+      where: {
+        contractId,
+        tenantId: tenantId || 'core',
+      },
+      include: {
+        signatures: true,
+      },
+    });
+
+    if (!contract) {
+      throw new NotFoundException(`Contract ${contractId} not found`);
+    }
+
+    // Generate presigned URL
+    const result = await this.s3.createPresignedGetUrl({
+      key: contract.pointer,
+      expiresIn,
+      reqTenant: { id: tenantId || 'core' },
+    });
+
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    // Log in audit log (optional)
+    await this.prisma.auditLog.create({
+      data: {
+        action: 'GENERATE_PUBLIC_URL',
+        entityType: 'CONTRACT',
+        entityId: contract.id,
+        tenantId: tenantId || 'core',
+        metadata: {
+          expiresIn,
+          expiresAt: expiresAt.toISOString(),
+        },
+      },
+    });
+
+    return {
+      contractId: contract.contractId,
+      publicUrl: result.url,
+      expiresIn: result.expiresIn,
+      expiresAt,
+      status: contract.status,
+      signatures: contract.signatures.length,
+    };
+  }
 }
 

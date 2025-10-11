@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards, Req, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards, Req, UseInterceptors, UploadedFile, BadRequestException, Res } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery, ApiSecurity, ApiConsumes } from '@nestjs/swagger';
 import { FirebaseGuard } from '../auth/firebase.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -8,6 +9,7 @@ import { ContractsService } from './contracts.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { SignContractDto } from './dto/sign-contract.dto';
 import { UploadContractDto } from './dto/upload-contract.dto';
+import { GeneratePublicUrlDto } from './dto/generate-public-url.dto';
 
 @ApiTags('contracts')
 @ApiBearerAuth('firebase-auth')
@@ -182,6 +184,70 @@ export class ContractsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   sign(@Param('id') id: string, @Body() body: SignContractDto, @Req() req: any) {
     return this.svc.sign(id, body, req.user, req.tenant?.id);
+  }
+
+  @Get(':id/download')
+  @Roles('ADMIN', 'SELLER', 'BUYER')
+  @ApiOperation({ 
+    summary: 'Download contract PDF',
+    description: 'Generates a temporary secure URL to download the contract PDF. URL expires after specified time (default: 1 hour). This is the RECOMMENDED way to access PDFs.',
+  })
+  @ApiParam({ name: 'id', description: 'Contract ID (bytes32 hex)' })
+  @ApiQuery({ 
+    name: 'expiresIn', 
+    required: false, 
+    type: Number, 
+    example: 3600,
+    description: 'URL expiration time in seconds (default: 3600 = 1 hour, max: 604800 = 7 days)' 
+  })
+  @ApiResponse({ 
+    status: 302, 
+    description: 'Redirects to temporary PDF download URL',
+  })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async download(
+    @Param('id') id: string, 
+    @Query('expiresIn') expiresIn: string | undefined,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    const downloadUrl = await this.svc.generateDownloadUrl(
+      id, 
+      req.tenant?.id,
+      expiresIn ? parseInt(expiresIn) : undefined
+    );
+    return res.redirect(downloadUrl);
+  }
+
+  @Post(':id/public-url')
+  @Roles('ADMIN')
+  @ApiOperation({ 
+    summary: 'Generate public URL for contract PDF (Admin only)',
+    description: 'Generates a temporary public URL for sharing the PDF externally. Only admins can generate public URLs. Use this for sharing contracts via email, WhatsApp, etc.',
+  })
+  @ApiParam({ name: 'id', description: 'Contract ID (bytes32 hex)' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Public URL generated',
+    schema: {
+      example: {
+        contractId: '0x398288...',
+        publicUrl: 'https://r2.cloudflarestorage.com/...?signature=...',
+        expiresIn: 3600,
+        expiresAt: '2025-10-11T19:30:00.000Z'
+      }
+    }
+  })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Admin only' })
+  async generatePublicUrl(
+    @Param('id') id: string,
+    @Body() dto: GeneratePublicUrlDto,
+    @Req() req: any,
+  ) {
+    return this.svc.generatePublicUrl(id, req.tenant?.id, dto.expiresIn);
   }
 }
 

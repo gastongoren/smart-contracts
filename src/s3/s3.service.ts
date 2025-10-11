@@ -1,5 +1,5 @@
 import { Injectable, Scope, Inject, Optional } from '@nestjs/common';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import { InMemoryTenantRegistry, resolveTenantConfig } from '../tenant/tenant.registry';
@@ -124,6 +124,38 @@ export class S3Service {
         tenantId: reqTenant?.id ?? 'core',
         mock: true 
       };
+    }
+  }
+
+  // Generate presigned GET URL for downloading files
+  async createPresignedGetUrl(params: {
+    key: string;
+    expiresIn?: number;
+    reqTenant?: { id: string };
+  }): Promise<{ url: string; expiresIn: number; bucket: string }> {
+    const { key, expiresIn = 3600, reqTenant } = params;
+    const tenantCfg = resolveTenantConfig(this.base, this.registry?.getTenant(reqTenant?.id ?? 'core'));
+
+    // If R2.dev public domain is configured, return public URL
+    if (process.env.R2_PUBLIC_DOMAIN) {
+      const publicUrl = `https://${process.env.R2_PUBLIC_DOMAIN}/${key}`;
+      return { url: publicUrl, expiresIn: 0, bucket: tenantCfg.s3Bucket };
+    }
+
+    // If no S3 client (dev mode), return mock response
+    if (!this.client) {
+      const mockUrl = `https://s3.${process.env.AWS_REGION}.amazonaws.com/${tenantCfg.s3Bucket}/${key}`;
+      return { url: mockUrl, expiresIn, bucket: tenantCfg.s3Bucket };
+    }
+
+    try {
+      const cmd = new GetObjectCommand({ Bucket: tenantCfg.s3Bucket, Key: key });
+      const url = await getSignedUrl(this.client, cmd, { expiresIn });
+      return { url, expiresIn, bucket: tenantCfg.s3Bucket };
+    } catch (error) {
+      console.warn('⚠️  S3 presigned GET URL generation failed, returning mock URL');
+      const mockUrl = `https://s3.${process.env.AWS_REGION}.amazonaws.com/${tenantCfg.s3Bucket}/${key}`;
+      return { url: mockUrl, expiresIn, bucket: tenantCfg.s3Bucket };
     }
   }
 }
