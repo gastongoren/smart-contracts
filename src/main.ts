@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { TenantInterceptor } from './tenant/tenant.interceptor';
 import { InMemoryTenantRegistry } from './tenant/tenant.registry';
@@ -73,10 +74,49 @@ async function bootstrap() {
     // hostMap: { 'api.sanmartin.local': 'mutual-sanmartin' }
   }));
   
+  // Swagger documentation
+  const config = new DocumentBuilder()
+    .setTitle('Smart Contracts API')
+    .setDescription('Multi-tenant smart contract signing system with blockchain integration')
+    .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'Authorization',
+        description: 'Enter your Firebase JWT token',
+        in: 'header',
+      },
+      'firebase-auth',
+    )
+    .addApiKey(
+      {
+        type: 'apiKey',
+        name: 'x-tenant-id',
+        in: 'header',
+        description: 'Tenant ID (optional, defaults to "core")',
+      },
+      'tenant-header',
+    )
+    .addTag('health', 'Health check endpoints')
+    .addTag('auth', 'Authentication and user info')
+    .addTag('contracts', 'Smart contract management')
+    .addTag('s3', 'File storage and presigned URLs')
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api-docs', app, document, {
+    customSiteTitle: 'Smart Contracts API',
+    customfavIcon: 'https://nestjs.com/img/logo-small.svg',
+    customCss: '.swagger-ui .topbar { display: none }',
+  });
+
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   console.log(`🚀 Application is running on: http://localhost:${port}`);
   console.log(`📊 Health check: http://localhost:${port}/health`);
+  console.log(`📚 API Documentation: http://localhost:${port}/api-docs`);
 }
 bootstrap();
 
