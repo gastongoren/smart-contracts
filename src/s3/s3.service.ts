@@ -40,6 +40,48 @@ export class S3Service {
     }
   }
 
+  // Direct upload from backend (buffer → R2)
+  async uploadFile(params: {
+    buffer: Buffer;
+    contentType: string;
+    ext?: string;
+    userId?: string;
+    reqTenant?: { id: string };
+  }): Promise<{ key: string; bucket: string; url: string; tenantId: string }> {
+    const { buffer, contentType, ext = '', userId, reqTenant } = params;
+    const tenantCfg = resolveTenantConfig(this.base, this.registry?.getTenant(reqTenant?.id ?? 'core'));
+    const key = `${tenantCfg.s3Prefix}${userId ? `${userId}/` : ''}${randomUUID()}${ext}`;
+
+    // If no S3 client (dev mode), return mock response
+    if (!this.client) {
+      const mockUrl = `https://s3.${process.env.AWS_REGION}.amazonaws.com/${tenantCfg.s3Bucket}/${key}`;
+      console.log('⚠️  S3: Mock upload (no credentials)');
+      return { key, bucket: tenantCfg.s3Bucket, url: mockUrl, tenantId: reqTenant?.id ?? 'core' };
+    }
+
+    try {
+      // Upload directly to R2/S3
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: tenantCfg.s3Bucket,
+          Key: key,
+          Body: buffer,
+          ContentType: contentType,
+        }),
+      );
+
+      // Build public URL (adjust based on your R2 configuration)
+      const publicUrl = process.env.AWS_ENDPOINT_URL
+        ? `${process.env.AWS_ENDPOINT_URL}/${tenantCfg.s3Bucket}/${key}`
+        : `https://s3.${process.env.AWS_REGION}.amazonaws.com/${tenantCfg.s3Bucket}/${key}`;
+
+      return { key, bucket: tenantCfg.s3Bucket, url: publicUrl, tenantId: reqTenant?.id ?? 'core' };
+    } catch (error) {
+      console.error('❌ S3 upload failed:', error);
+      throw new Error(`Failed to upload file to R2: ${error.message}`);
+    }
+  }
+
   // reqTenant: pasar desde controller (req.tenant)
   async createPresignedPutUrl(params: {
     contentType: string;

@@ -2,8 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { ChainService } from '../chain/chain.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { S3Service } from '../s3/s3.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { SignContractDto } from './dto/sign-contract.dto';
+import { UploadContractDto } from './dto/upload-contract.dto';
 
 function toBytes32(hex: string) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) throw new Error('Invalid bytes32 hex');
@@ -20,6 +22,7 @@ export class ContractsService {
   constructor(
     private chain: ChainService,
     private prisma: PrismaService,
+    private s3: S3Service,
   ) {}
 
   async create(dto: CreateContractDto, user: any, tenantId?: string) {
@@ -185,6 +188,72 @@ export class ContractsService {
         total,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  // New: Upload PDF and create contract in one step
+  async uploadAndCreate(
+    dto: UploadContractDto,
+    file: Express.Multer.File,
+    user: any,
+    tenantId?: string,
+  ) {
+    // 1. Calculate hash of PDF
+    const hashBuffer = createHash('sha256').update(file.buffer).digest();
+    const hashPdf = '0x' + hashBuffer.toString('hex');
+
+    // 2. Upload PDF directly to R2 (server-side)
+    const uploadResult = await this.s3.uploadFile({
+      buffer: file.buffer,
+      contentType: file.mimetype,
+      ext: '.pdf',
+      userId: user?.uid,
+      reqTenant: { id: tenantId || 'core' },
+    });
+
+    // 3. Generate contract ID
+    const contractId = (dto.contractId && /^0x/.test(dto.contractId))
+      ? dto.contractId
+      : uuidToBytes32(dto.contractId);
+
+    // 4. Register on blockchain
+    const txResult = await this.chain.registerCreate({
+      contractIdHex: contractId,
+      templateId: dto.templateId,
+      version: dto.version,
+      hashPdfHex: hashPdf,
+      pointer: uploadResult.key,
+      signers: [],
+      tenantId,
+    });
+
+    // 5. Save to database
+    const contract = await this.prisma.contract.create({
+      data: {
+        contractId,
+        tenantId: tenantId || 'core',
+        templateId: dto.templateId,
+        version: dto.version,
+        hashPdf: hashPdf,
+        pointer: uploadResult.key,
+        createdBy: user?.uid || 'system',
+        txHash: txResult.txHash,
+        status: 'created',
+      },
+      include: {
+        signatures: true,
+      },
+    });
+
+    return {
+      contractId: contract.contractId,
+      txHash: contract.txHash,
+      id: contract.id,
+      status: contract.status,
+      hashPdf: hashPdf,
+      pdfUrl: uploadResult.url,
+      pdfKey: uploadResult.key,
+      createdAt: contract.createdAt,
     };
   }
 }

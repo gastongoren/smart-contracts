@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards, Req } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery, ApiSecurity } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Post, Query, UseGuards, Req, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery, ApiSecurity, ApiConsumes } from '@nestjs/swagger';
 import { FirebaseGuard } from '../auth/firebase.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ContractsService } from './contracts.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { SignContractDto } from './dto/sign-contract.dto';
+import { UploadContractDto } from './dto/upload-contract.dto';
 
 @ApiTags('contracts')
 @ApiBearerAuth('firebase-auth')
@@ -15,11 +17,52 @@ import { SignContractDto } from './dto/sign-contract.dto';
 export class ContractsController {
   constructor(private svc: ContractsService) {}
 
+  @Post('upload')
+  @Roles('ADMIN', 'SELLER')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ 
+    summary: 'Upload PDF and create contract (RECOMMENDED)',
+    description: '🚀 ONE-STEP: Upload PDF → Calculate hash → Upload to R2 → Register on blockchain → Save to DB. This is the recommended way to create contracts.',
+  })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Contract uploaded and created successfully',
+    schema: {
+      example: {
+        contractId: '0x3a5f8d7c9e1b4a6f8e2d9c7b5a3f1e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3',
+        txHash: '0xabc123...',
+        id: 1,
+        status: 'created',
+        hashPdf: '0x456...',
+        uploadUrl: 'https://r2.cloudflarestorage.com/...',
+        pdfKey: 'uploads/user123/contract.pdf',
+        createdAt: '2025-10-11T10:30:00.000Z'
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Invalid input or file' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden - insufficient role' })
+  async uploadAndCreate(
+    @Body() dto: UploadContractDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('PDF file is required');
+    }
+    if (file.mimetype !== 'application/pdf') {
+      throw new BadRequestException('Only PDF files are allowed');
+    }
+    return this.svc.uploadAndCreate(dto, file, req.user, req.tenant?.id);
+  }
+
   @Post()
   @Roles('ADMIN', 'SELLER')
   @ApiOperation({ 
-    summary: 'Create a new contract',
-    description: 'Creates a new smart contract and registers it on the blockchain. Requires ADMIN or SELLER role.',
+    summary: 'Create a new contract (manual)',
+    description: 'Creates a new smart contract with pre-uploaded PDF. You need to upload PDF and calculate hash manually. Use POST /contracts/upload for easier workflow.',
   })
   @ApiResponse({ 
     status: 201, 
