@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterUserDto } from './dto/register-user.dto';
@@ -58,6 +58,51 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  // Public method to get Firebase token (no authentication required)
+  async getToken(email: string, password: string) {
+    try {
+      // Call Firebase REST API to sign in
+      const response = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email,
+            password,
+            returnSecureToken: true,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new UnauthorizedException(data.error?.message || 'Authentication failed');
+      }
+
+      // Get user info from Firebase Admin SDK
+      const userRecord = await admin.auth().getUser(data.localId);
+
+      return {
+        token: data.idToken,
+        user: {
+          uid: userRecord.uid,
+          email: userRecord.email,
+          displayName: userRecord.displayName,
+        },
+        expiresIn: parseInt(data.expiresIn),
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Authentication failed');
+    }
   }
 
   async updateUserRole(firebaseUid: string, role: string) {

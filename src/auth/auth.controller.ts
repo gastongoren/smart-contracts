@@ -2,6 +2,7 @@ import { Controller, Post, Get, Body, Param, Patch, UseGuards, Req } from '@nest
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
+import { LoginDto } from './dto/login.dto';
 import { FirebaseGuard } from './firebase.guard';
 import { Roles } from './roles.decorator';
 import { RolesGuard } from './roles.guard';
@@ -10,6 +11,32 @@ import { RolesGuard } from './roles.guard';
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
+
+  @Post('token')
+  @ApiOperation({
+    summary: 'Get Firebase token for user login',
+    description: '🔓 PUBLIC ENDPOINT - Get Firebase JWT token for authentication. Use this to login users before they can access protected endpoints.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Token obtained successfully',
+    schema: {
+      example: {
+        token: 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...',
+        user: {
+          uid: 'SoJczPKN4DYfChzWhvbiegSi0422',
+          email: 'test@contracts.com',
+          displayName: 'Test User'
+        },
+        expiresIn: 3600
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Invalid credentials' })
+  @ApiResponse({ status: 401, description: 'Authentication failed' })
+  async getToken(@Body() loginDto: LoginDto) {
+    return this.authService.getToken(loginDto.email, loginDto.password);
+  }
 
   @Post('register')
   @ApiOperation({
