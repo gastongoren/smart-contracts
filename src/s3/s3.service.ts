@@ -14,18 +14,29 @@ export class S3Service {
   };
 
   constructor(@Optional() @Inject(InMemoryTenantRegistry) private registry?: InMemoryTenantRegistry) {
-    const region = process.env.AWS_REGION!;
+    const region = process.env.AWS_REGION || 'auto';
     try {
-      // Try to initialize S3Client - will fail if no AWS credentials
-      this.client = new S3Client({
+      // Initialize S3Client with support for custom endpoints (Cloudflare R2, MinIO, etc.)
+      const config: any = {
         region,
         credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
           accessKeyId: process.env.AWS_ACCESS_KEY_ID,
           secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
         } : undefined,
-      });
+      };
+
+      // Support for Cloudflare R2 or other S3-compatible services
+      if (process.env.AWS_ENDPOINT_URL) {
+        config.endpoint = process.env.AWS_ENDPOINT_URL;
+        config.forcePathStyle = true; // Required for R2
+        console.log(`✅ S3Service: Using custom endpoint: ${process.env.AWS_ENDPOINT_URL}`);
+      }
+
+      this.client = new S3Client(config);
+      console.log('✅ S3Service: Client initialized successfully');
     } catch (error) {
-      console.warn('⚠️  S3Service: AWS credentials not configured - using mock responses');
+      console.warn('⚠️  S3Service: Failed to initialize - using mock responses');
+      console.warn('   Error:', error.message);
     }
   }
 
