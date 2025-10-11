@@ -1,190 +1,250 @@
-# Smart Contracts Core Library
+# Smart Contracts Multi-Tenant API
 
-Multi-tenant smart contract management system built with NestJS, AWS S3, and Ethereum.
+Enterprise-grade multi-tenant smart contract management system with blockchain integration, built with NestJS.
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-10.0-red)](https://nestjs.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
 
-- 🏢 **Multi-Tenant Architecture** - Support multiple tenants with isolated configurations
-- ⛓️ **Blockchain Integration** - Ethereum smart contract registry with ethers.js
-- 📦 **S3 Storage** - Tenant-specific S3 buckets and prefixes
-- 🔐 **Firebase Authentication** - JWT-based authentication with role-based access control
-- 🎨 **Tenant Branding** - Custom branding per tenant (name, colors, logos)
+- 🏢 **Multi-Tenant Architecture** - Complete tenant isolation with custom branding and configuration
+- ⛓️ **Blockchain Integration** - Ethereum smart contract registry with immutable signatures
+- 🔐 **Firebase Authentication** - JWT-based auth with role-based access control
+- 📦 **Cloud Storage** - Cloudflare R2 (S3-compatible) with tenant-specific organization
+- 🗄️ **PostgreSQL Database** - Persistent storage with Prisma ORM
+- 📚 **OpenAPI Documentation** - Complete Swagger/OpenAPI 3.0 specification
+- 🛡️ **Production-Ready** - Security headers, rate limiting, validation, CORS
 
-## Getting Started
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- PostgreSQL 15+ (or Docker)
+- Firebase project
+- Cloudflare R2 bucket (or AWS S3)
 
 ### Installation
 
 ```bash
+# Clone repository
+git clone https://github.com/gastongoren/smart-contracts.git
+cd smart-contracts
+
+# Install dependencies
 npm install
-```
 
-### Configuration
-
-Copy `.env.example` to `.env` and configure:
-
-```bash
+# Configure environment
 cp .env.example .env
-```
+# Edit .env with your credentials
 
-Key environment variables:
-- `TENANT_DEFAULT_ID` - Default tenant ID (default: `core`)
-- `AWS_REGION`, `S3_BUCKET`, `S3_PREFIX` - AWS S3 configuration
-- `CHAIN_RPC_URL`, `CHAIN_PRIVATE_KEY`, `CHAIN_REGISTRY_ADDRESS` - Blockchain settings
-- `FIREBASE_PROJECT_ID`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_CLIENT_EMAIL` - Firebase credentials
+# Start PostgreSQL (Docker)
+docker-compose up -d
 
-### Running the App
+# Run migrations
+npx prisma migrate deploy
 
-```bash
-# Development
+# Start development server
 npm run start:dev
-
-# Production
-npm run build
-npm start
 ```
 
-The server will start on `http://localhost:3000`
+Server runs on `http://localhost:3000`
 
-## Multi-Tenant System
+## API Documentation
 
-### Tenant Resolution
+Once running, access interactive API documentation at:
+- **Swagger UI:** http://localhost:3000/api-docs
+- **OpenAPI JSON:** http://localhost:3000/api-docs-json
 
-Tenants are resolved in the following order:
-1. `X-Tenant-Id` header
-2. Host mapping (configurable in `main.ts`)
-3. Default tenant ID from environment
+## Architecture
 
-### Tenant Configuration
+### Tech Stack
 
-Configure tenants in `src/app.module.ts`:
+- **Backend:** NestJS, TypeScript
+- **Database:** PostgreSQL, Prisma ORM
+- **Authentication:** Firebase Auth with JWT
+- **Storage:** Cloudflare R2 (S3-compatible)
+- **Blockchain:** Ethereum (ethers.js v6)
+- **Deployment:** Railway
 
-```typescript
-TenantModule.register({ 
-  tenants: [
-    { 
-      id: 'core', 
-      branding: { 
-        name: 'Smart Core', 
-        primaryColor: '#0ea5e9' 
-      },
-      overrides: {
-        s3Bucket: 'custom-bucket',  // Optional
-        s3Prefix: 'custom-prefix/', // Optional
-        chainRegistryAddress: '0x...' // Optional
-      }
-    }
-  ]
-})
-```
+### Multi-Tenant Design
 
-### Using Tenant Context
+Each tenant can have isolated:
+- Branding (name, colors, logo)
+- Storage buckets and prefixes
+- Blockchain registry addresses
+- User access controls
 
-In controllers:
-
-```typescript
-@Controller('example')
-export class ExampleController {
-  @Get()
-  getData(@Req() req: any) {
-    const tenantId = req.tenant?.id;
-    const config = req.tenant?.config;
-    // ...
-  }
-}
-```
+Tenant resolution order:
+1. `x-tenant-id` header
+2. User's custom claims
+3. Host mapping
+4. Default tenant
 
 ## API Endpoints
 
-### Health Check
+### Authentication
+- `POST /auth/register` - Register user with tenant and role
+- `GET /me` - Get current user info
+
+### Contracts
+- `POST /contracts` - Create contract
+- `GET /contracts` - List contracts (paginated)
+- `GET /contracts/:id` - Get contract details
+- `POST /contracts/:id/sign` - Sign contract
+
+### Storage
+- `POST /s3/presign` - Generate presigned upload URL
+
+### Users (Admin only)
+- `GET /auth/users` - List all users
+- `PATCH /auth/users/:uid/role` - Update user role
+
+See full documentation in [docs/API_EXAMPLES.md](docs/API_EXAMPLES.md)
+
+## Configuration
+
+### Environment Variables
+
 ```bash
-curl http://localhost:3000/health
+# Server
+NODE_ENV=production
+PORT=3000
+
+# Database
+DATABASE_URL=postgresql://...
+
+# Firebase
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk@...
+
+# Cloudflare R2
+AWS_REGION=auto
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_ENDPOINT_URL=https://xxx.r2.cloudflarestorage.com
+S3_BUCKET=your-bucket-name
+S3_PREFIX=uploads/
+
+# Blockchain
+CHAIN_RPC_URL=https://rpc.ankr.com/eth_sepolia
+CHAIN_PRIVATE_KEY=0x...
+CHAIN_REGISTRY_ADDRESS=0x...
+
+# Tenant
+TENANT_DEFAULT_ID=core
 ```
 
-### Get Current User (requires authentication)
-```bash
-curl -H "Authorization: Bearer YOUR_FIREBASE_TOKEN" \
-     -H "X-Tenant-Id: core" \
-     http://localhost:3000/me
-```
+## Deployment
 
-### Create Contract (requires authentication + ADMIN/SELLER role)
-```bash
-curl -X POST http://localhost:3000/contracts \
-  -H "Authorization: Bearer YOUR_FIREBASE_TOKEN" \
-  -H "X-Tenant-Id: core" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "templateId": 1,
-    "version": 1,
-    "hashPdfHex": "0x1234567890abcdef...",
-    "pointer": "s3://bucket/key"
-  }'
-```
+See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment guide to Railway.
 
-### Sign Contract (requires authentication + ADMIN/SELLER role)
-```bash
-curl -X POST http://localhost:3000/contracts/{contractId}/sign \
-  -H "Authorization: Bearer YOUR_FIREBASE_TOKEN" \
-  -H "X-Tenant-Id: core" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "signerAddress": "0x...",
-    "hashEvidenceHex": "0x..."
-  }'
-```
+Quick deploy:
+1. Push to GitHub
+2. Connect Railway to repository
+3. Add PostgreSQL database
+4. Configure environment variables
+5. Deploy automatically
 
-### Get S3 Presigned URL (requires authentication)
+## Development
+
 ```bash
-curl -X POST http://localhost:3000/s3/presign \
-  -H "Authorization: Bearer YOUR_FIREBASE_TOKEN" \
-  -H "X-Tenant-Id: core" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contentType": "application/pdf",
-    "ext": ".pdf",
-    "userId": "user123"
-  }'
+# Start PostgreSQL
+docker-compose up -d
+
+# Run migrations
+npx prisma migrate dev
+
+# Start dev server with hot reload
+npm run start:dev
+
+# View database
+npx prisma studio
+
+# Run build
+npm run build
+
+# Start production
+npm run start:prod
 ```
 
 ## Project Structure
 
 ```
 src/
-├── auth/                  # Authentication guards and decorators
-│   ├── firebase.guard.ts
-│   ├── roles.guard.ts
-│   └── roles.decorator.ts
-├── tenant/                # Multi-tenant system
-│   ├── tenant.types.ts
-│   ├── tenant.registry.ts
-│   ├── tenant.module.ts
-│   ├── tenant.interceptor.ts
-│   └── tenant.decorator.ts
-├── s3/                    # S3 service for file storage
-│   ├── s3.service.ts
-│   ├── s3.module.ts
-│   └── s3.controller.ts
-├── chain/                 # Blockchain integration
-│   ├── chain.service.ts
-│   ├── chain.module.ts
-│   └── registry.abi.json
-├── contracts/             # Contract management
-│   ├── contracts.service.ts
-│   ├── contracts.module.ts
-│   ├── contracts.controller.ts
-│   └── dto/
-├── health/                # Health check endpoint
-├── me/                    # User profile endpoint
-├── app.module.ts          # Main application module
-└── main.ts                # Application bootstrap
+├── auth/          # Authentication & user management
+├── tenant/        # Multi-tenant system
+├── contracts/     # Smart contract operations
+├── s3/            # Cloud storage (R2/S3)
+├── chain/         # Blockchain integration
+├── prisma/        # Database service
+├── health/        # Health checks
+└── me/            # User profile
+
+prisma/
+├── schema.prisma
+└── migrations/
+
+docs/              # Additional documentation
 ```
 
-## Development Notes
+## Security
 
-- Firebase authentication is optional in development (configure valid credentials to enable)
-- Blockchain operations use stub responses when no valid private key is configured
-- The zero address (`0x0000000000000000000000000000000000000000`) in `CHAIN_REGISTRY_ADDRESS` will return stub transaction hashes
+- **Authentication:** Firebase JWT tokens with custom claims
+- **Authorization:** Role-based access control (RBAC)
+- **Data Isolation:** Automatic tenant filtering in all queries
+- **Rate Limiting:** 20 requests/minute per IP
+- **Input Validation:** class-validator on all DTOs
+- **Security Headers:** Helmet.js configured
+- **CORS:** Configurable allowed origins
+
+## Multi-Tenant Features
+
+### Tenant Configuration
+
+```typescript
+TenantModule.register({
+  tenants: [
+    {
+      id: 'acme-corp',
+      branding: {
+        name: 'Acme Corporation',
+        primaryColor: '#0ea5e9',
+        logoUrl: 'https://...'
+      },
+      overrides: {
+        s3Bucket: 'acme-uploads',
+        s3Prefix: 'acme/',
+        chainRegistryAddress: '0x...'
+      }
+    }
+  ]
+})
+```
+
+### User-Tenant Assignment
+
+Users can belong to one or multiple tenants:
+
+```json
+{
+  "firebaseUid": "abc123",
+  "email": "user@example.com",
+  "tenantId": "acme-corp",
+  "role": "SELLER",
+  "tenants": ["acme-corp", "other-tenant"]
+}
+```
 
 ## License
 
 MIT
+
+## Documentation
+
+- [API Examples](docs/API_EXAMPLES.md)
+- [User Registration Guide](docs/USER_REGISTRATION_GUIDE.md)
+- [Quick Start Guide](docs/QUICKSTART.md)
+- [Deployment Guide](DEPLOYMENT.md)
