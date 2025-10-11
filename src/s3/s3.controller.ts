@@ -1,5 +1,6 @@
 import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiSecurity, ApiProperty } from '@nestjs/swagger';
+import { IsString, IsOptional } from 'class-validator';
 import { z } from 'zod';
 import { FirebaseGuard } from '../auth/firebase.guard';
 import { S3Service } from './s3.service';
@@ -15,6 +16,7 @@ class PresignDto {
     description: 'MIME type of the file to upload',
     example: 'application/pdf',
   })
+  @IsString()
   contentType!: string;
 
   @ApiProperty({
@@ -22,6 +24,8 @@ class PresignDto {
     example: '.pdf',
     required: false,
   })
+  @IsOptional()
+  @IsString()
   ext?: string;
 
   @ApiProperty({
@@ -29,6 +33,8 @@ class PresignDto {
     example: 'user123',
     required: false,
   })
+  @IsOptional()
+  @IsString()
   userId?: string;
 }
 
