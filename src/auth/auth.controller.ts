@@ -2,6 +2,8 @@ import { Controller, Post, Get, Body, Param, Patch, UseGuards, Req } from '@nest
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
+import { EmailRegisterDto } from './dto/email-register.dto';
+import { GoogleRegisterDto } from './dto/google-register.dto';
 import { LoginDto } from './dto/login.dto';
 import { FirebaseGuard } from './firebase.guard';
 import { Roles } from './roles.decorator';
@@ -135,6 +137,64 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getUser(@Param('firebaseUid') firebaseUid: string) {
     return this.authService.getUser(firebaseUid);
+  }
+
+  // ============================================
+  // NEW REGISTRATION ENDPOINTS (with DNI)
+  // ============================================
+
+  @Post('register/email')
+  @ApiOperation({
+    summary: 'Register with Email/Password (with DNI)',
+    description: '📝 Register a new user with email and password. Requires DNI, reCAPTCHA, and email verification.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'User registered successfully',
+    schema: {
+      example: {
+        user: {
+          uid: 'firebase-uid-123',
+          email: 'juan@example.com',
+          fullName: 'Juan Pérez',
+          emailVerified: false,
+        },
+        message: 'Registro exitoso. Por favor verifica tu email.',
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid input or reCAPTCHA failed' })
+  @ApiResponse({ status: 409, description: 'Email already registered' })
+  async registerWithEmail(@Body() dto: EmailRegisterDto, @Req() req: any) {
+    return this.authService.registerWithEmail(dto, req);
+  }
+
+  @Post('register/google')
+  @ApiOperation({
+    summary: 'Register with Google Sign-In (with DNI)',
+    description: '🔵 Register a new user using Google Sign-In. Requires DNI. Email is automatically verified by Google.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'User registered successfully with Google',
+    schema: {
+      example: {
+        user: {
+          uid: 'firebase-uid-123',
+          email: 'juan@gmail.com',
+          fullName: 'Juan Pérez',
+          emailVerified: true,
+          trustScore: 85,
+        },
+        message: 'Registro exitoso con Google',
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid Google token' })
+  @ApiResponse({ status: 401, description: 'Unauthorized - invalid token' })
+  @ApiResponse({ status: 409, description: 'User already registered' })
+  async registerWithGoogle(@Body() dto: GoogleRegisterDto, @Req() req: any) {
+    return this.authService.registerWithGoogle(dto, req);
   }
 }
 

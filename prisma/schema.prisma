@@ -54,18 +54,57 @@ model Signature {
 model User {
   id          String   @id @default(uuid())
   firebaseUid String   @unique
+  uid         String?  @unique // Firebase UID (new standard field)
   email       String   @unique
   tenantId    String   // Primary tenant
   role        String   @default("BUYER") // ADMIN, SELLER, BUYER
   tenants     String[] // Array of allowed tenants (for multi-tenant users)
   active      Boolean  @default(true)
   metadata    Json?    // Additional user data
+  
+  // Personal information
+  fullName        String?
+  documentType    String?  @default("DNI") // DNI, CUIT, Pasaporte
+  documentNumber  String?  @unique
+  phoneNumber     String?
+  photoUrl        String?
+  
+  // Authentication provider
+  provider        String   @default("email") // 'email' | 'google'
+  
+  // Verification status
+  emailVerified   Boolean  @default(false)
+  phoneVerified   Boolean  @default(false)
+  verified        Boolean  @default(false) // KYC verified
+  verifiedAt      DateTime?
+  verificationId  String?  // Veriff/Onfido verification ID
+  verificationProvider String? // 'veriff', 'onfido'
+  
+  // Google-specific metadata
+  googleName          String?
+  accountCreatedAt    DateTime?
+  accountAgeInDays    Int?
+  trustScore          Int      @default(50)
+  
+  // Device fingerprint
+  deviceIp        String?
+  deviceUserAgent String?
+  deviceId        String?
+  
+  // Fraud detection
+  suspiciousRegistration Boolean @default(false)
+  nameSimilarity        Decimal?
+  
+  // Timestamps
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  lastLoginAt DateTime?
 
   @@index([tenantId])
   @@index([firebaseUid])
+  @@index([uid])
   @@index([email])
+  @@index([documentNumber])
   @@map("users")
 }
 
