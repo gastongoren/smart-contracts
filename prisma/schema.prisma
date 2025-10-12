@@ -53,7 +53,7 @@ model Signature {
 
 model User {
   id          String   @id @default(uuid())
-  firebaseUid String   @unique
+  firebaseUid String?  @unique // Legacy field (optional for backward compatibility)
   uid         String?  @unique // Firebase UID (new standard field)
   email       String   @unique
   tenantId    String   // Primary tenant
