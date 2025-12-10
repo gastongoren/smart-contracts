@@ -1,25 +1,23 @@
-import { Injectable, ConflictException, NotFoundException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, UnauthorizedException, BadRequestException, Inject } from '@nestjs/common';
 import * as admin from 'firebase-admin';
-import { PrismaService } from '../prisma/prisma.service';
 import { RegisterUserDto } from './dto/register-user.dto';
 import { EmailRegisterDto } from './dto/email-register.dto';
 import { GoogleRegisterDto } from './dto/google-register.dto';
+import { IUserRepository } from './repositories/user.repository.interface';
 
 @Injectable()
 export class AuthService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    @Inject('IUserRepository') private userRepo: IUserRepository,
+  ) {}
 
   async registerUser(dto: RegisterUserDto) {
-    // Check if user already exists in DB
-    const existing = await this.prisma.user.findUnique({
-      where: { firebaseUid: dto.firebaseUid },
-    });
+    const existing = await this.userRepo.findByFirebaseUid(dto.firebaseUid);
 
     if (existing) {
       throw new ConflictException('User already registered');
     }
 
-    // Set custom claims in Firebase
     const tenants = dto.tenants || [dto.tenantId];
     await admin.auth().setCustomUserClaims(dto.firebaseUid, {
       role: dto.role,
@@ -27,16 +25,13 @@ export class AuthService {
       tenants,
     });
 
-    // Save user in database
-    const user = await this.prisma.user.create({
-      data: {
-        firebaseUid: dto.firebaseUid,
-        email: dto.email,
-        tenantId: dto.tenantId,
-        role: dto.role,
-        tenants,
-        metadata: dto.metadata,
-      },
+    const user = await this.userRepo.create({
+      firebaseUid: dto.firebaseUid,
+      email: dto.email,
+      tenantId: dto.tenantId,
+      role: dto.role,
+      tenants,
+      metadata: dto.metadata,
     });
 
     return {
@@ -51,9 +46,7 @@ export class AuthService {
   }
 
   async getUser(firebaseUid: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { firebaseUid },
-    });
+    const user = await this.userRepo.findByFirebaseUid(firebaseUid);
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -108,12 +101,8 @@ export class AuthService {
   }
 
   async updateUserRole(firebaseUid: string, role: string) {
-    const user = await this.prisma.user.update({
-      where: { firebaseUid },
-      data: { role },
-    });
+    const user = await this.userRepo.update(firebaseUid, { role });
 
-    // Update custom claims in Firebase
     const firebaseUser = await admin.auth().getUser(firebaseUid);
     const currentClaims = firebaseUser.customClaims || {};
     
@@ -126,22 +115,7 @@ export class AuthService {
   }
 
   async listUsers(tenantId?: string) {
-    const users = await this.prisma.user.findMany({
-      where: tenantId ? { tenantId } : undefined,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        firebaseUid: true,
-        email: true,
-        tenantId: true,
-        role: true,
-        tenants: true,
-        active: true,
-        createdAt: true,
-      },
-    });
-
-    return users;
+    return this.userRepo.findMany(tenantId ? { tenantId } : undefined);
   }
 
   // ============================================
@@ -157,26 +131,19 @@ export class AuthService {
       throw new BadRequestException('reCAPTCHA token is required');
     }
     // TODO: Implement actual reCAPTCHA validation
-    console.log('⚠️  reCAPTCHA validation not implemented yet');
 
     // 2. Check rate limiting (basic check)
-    const recentUsers = await this.prisma.user.count({
-      where: {
-        deviceIp: req.ip,
-        createdAt: {
-          gte: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
-        },
-      },
-    });
+    const recentUsers = await this.userRepo.countByDeviceIp(
+      req.ip,
+      new Date(Date.now() - 24 * 60 * 60 * 1000)
+    );
 
     if (recentUsers >= 5) {
       throw new BadRequestException('Demasiados registros desde esta IP. Intenta más tarde.');
     }
 
     // 3. Check if email already exists
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
+    const existingUser = await this.userRepo.findByEmail(dto.email);
 
     if (existingUser) {
       throw new ConflictException('El email ya está registrado');
@@ -202,29 +169,26 @@ export class AuthService {
     try {
       const verificationLink = await admin.auth().generateEmailVerificationLink(dto.email);
       // TODO: Send email with verificationLink
-      console.log('📧 Email verification link:', verificationLink);
+      // Note: verificationLink generated but not sent (email service not implemented)
     } catch (error) {
       console.warn('⚠️  Failed to generate email verification link:', error.message);
     }
 
     // 6. Save user in database
-    const user = await this.prisma.user.create({
-      data: {
-        uid: firebaseUser.uid,
-        email: dto.email,
-        fullName: dto.fullName,
-        documentType: dto.documentType || 'DNI',
-        documentNumber: dto.documentNumber,
-        phoneNumber: dto.phoneNumber,
-        provider: 'email',
-        emailVerified: false,
-        verified: false,
-        tenantId: 'core',
-        role: 'BUYER',
-        // Device fingerprint
-        deviceIp: req.ip,
-        deviceUserAgent: req.headers['user-agent'],
-      },
+    const user = await this.userRepo.create({
+      uid: firebaseUser.uid,
+      email: dto.email,
+      fullName: dto.fullName,
+      documentType: dto.documentType || 'DNI',
+      documentNumber: dto.documentNumber,
+      phoneNumber: dto.phoneNumber,
+      provider: 'email',
+      emailVerified: false,
+      verified: false,
+      tenantId: 'core',
+      role: 'BUYER',
+      deviceIp: req.ip,
+      deviceUserAgent: req.headers['user-agent'],
     });
 
     return {
@@ -254,9 +218,9 @@ export class AuthService {
     const firebaseUser = await admin.auth().getUser(decodedToken.uid);
 
     // 3. Check if user already exists
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: firebaseUser.email },
-    });
+    const existingUser = firebaseUser.email 
+      ? await this.userRepo.findByEmail(firebaseUser.email)
+      : null;
 
     if (existingUser) {
       throw new ConflictException('El usuario ya está registrado');
@@ -281,29 +245,25 @@ export class AuthService {
     if (firebaseUser.photoURL) trustScore += 10;
 
     // 5. Save user in database
-    const user = await this.prisma.user.create({
-      data: {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email || '',
-        fullName: firebaseUser.displayName || '',
-        documentType: dto.documentType || 'DNI',
-        documentNumber: dto.documentNumber,
-        phoneNumber: dto.phoneNumber,
-        photoUrl: firebaseUser.photoURL,
-        provider: 'google',
-        emailVerified: true, // Google already verified
-        verified: false, // KYC not done yet
-        tenantId: 'core',
-        role: 'BUYER',
-        // Google metadata
-        googleName: firebaseUser.displayName,
-        accountCreatedAt: accountCreatedAt,
-        accountAgeInDays: accountAgeInDays,
-        trustScore: trustScore,
-        // Device fingerprint
-        deviceIp: req.ip,
-        deviceUserAgent: req.headers['user-agent'],
-      },
+    const user = await this.userRepo.create({
+      uid: firebaseUser.uid,
+      email: firebaseUser.email || '',
+      fullName: firebaseUser.displayName || '',
+      documentType: dto.documentType || 'DNI',
+      documentNumber: dto.documentNumber,
+      phoneNumber: dto.phoneNumber,
+      photoUrl: firebaseUser.photoURL,
+      provider: 'google',
+      emailVerified: true,
+      verified: false,
+      tenantId: 'core',
+      role: 'BUYER',
+      googleName: firebaseUser.displayName,
+      accountCreatedAt: accountCreatedAt,
+      accountAgeInDays: accountAgeInDays,
+      trustScore: trustScore,
+      deviceIp: req.ip,
+      deviceUserAgent: req.headers['user-agent'],
     });
 
     // 6. Warn if suspicious

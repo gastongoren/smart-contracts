@@ -1,56 +1,44 @@
-# Documentation
+# 📚 Documentación del Proyecto
 
-## Guides
+## 📖 Documentos Principales
 
-- [API Examples](./API_EXAMPLES.md) - Complete API usage examples with cURL commands
-- [User Registration Guide](./USER_REGISTRATION_GUIDE.md) - How to register and manage users
-- [Quick Start Guide](./QUICKSTART.md) - Get started with local development
+### Arquitectura
+- **[ARCHITECTURE_UNIFICATION_COMPLETE.md](./ARCHITECTURE_UNIFICATION_COMPLETE.md)** - ✅ Estado actual completo de la arquitectura
+- **[REPOSITORY_PATTERN_IMPLEMENTATION.md](./REPOSITORY_PATTERN_IMPLEMENTATION.md)** - Implementación del patrón Repository
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Documentación general de arquitectura
+- **[ARCHITECTURE_PATTERN.md](./ARCHITECTURE_PATTERN.md)** - Patrón arquitectónico implementado
 
-## Main Documentation
+### Guías de Uso
+- **[HOW_TO_SIGN_CONTRACT.md](./HOW_TO_SIGN_CONTRACT.md)** - Cómo firmar contratos (actualizado)
+- **[SIGNER_IDENTITY_VERIFICATION.md](./SIGNER_IDENTITY_VERIFICATION.md)** - Verificación de identidad (actualizado)
+- **[USER_REGISTRATION_GUIDE.md](./USER_REGISTRATION_GUIDE.md)** - Guía de registro de usuarios
+- **[QUICKSTART.md](./QUICKSTART.md)** - Inicio rápido
 
-- [README](../README.md) - Project overview and features
-- [Deployment Guide](../DEPLOYMENT.md) - Deploy to Railway (production)
+### Legal y Evidencia
+- **[AUDIT_INTEGRITY.md](./AUDIT_INTEGRITY.md)** - Auditoría de integridad
+- **[HOW_TO_PRESENT_AUDIT_EVIDENCE.md](./HOW_TO_PRESENT_AUDIT_EVIDENCE.md)** - Cómo presentar evidencia
+- **[KYC_AS_LEGAL_EVIDENCE.md](./KYC_AS_LEGAL_EVIDENCE.md)** - KYC como evidencia legal
+- **[BIOMETRIC_EVIDENCE_AND_PRIVACY.md](./BIOMETRIC_EVIDENCE_AND_PRIVACY.md)** - Evidencia biométrica y privacidad
 
-## API Reference
+### Desarrollo
+- **[ROADMAP.md](./ROADMAP.md)** - Roadmap del proyecto
+- **[API_EXAMPLES.md](./API_EXAMPLES.md)** - Ejemplos de API
+- **[ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md)** - Variables de entorno
+- **[TEST_INTEGRATION_RESULTS.md](./TEST_INTEGRATION_RESULTS.md)** - Resultados de pruebas
 
-- **Swagger UI:** https://smart-contracts-production.up.railway.app/api-docs
-- **OpenAPI JSON:** https://smart-contracts-production.up.railway.app/api-docs-json
+### Otros
+- **[CONTRACT_WORKFLOW.md](./CONTRACT_WORKFLOW.md)** - Flujo de trabajo de contratos
 
-## Architecture
+---
 
-The system follows a clean architecture pattern with:
+## 📁 Archivos Archivados
 
-- **Controllers** - HTTP request handling
-- **Services** - Business logic
-- **Repositories** - Data access (Prisma)
-- **Guards** - Authentication & authorization
-- **Interceptors** - Tenant resolution
-- **DTOs** - Data validation
+Documentos históricos están en `archive/` (si aplica).
 
-## Key Concepts
+---
 
-### Multi-Tenancy
-Each tenant has isolated data and configuration. Tenant resolution happens automatically via headers, user claims, or defaults.
+## 🔄 Última Actualización
 
-### Authentication Flow
-1. User registers/logs in via Firebase
-2. Backend assigns custom claims (role, tenantId)
-3. User receives JWT token with claims
-4. Token used in all API requests
-5. Backend validates and extracts user/tenant info
-
-### Contract Lifecycle
-1. **Created** - Initial creation, registered on blockchain
-2. **Partial Signed** - At least one signature
-3. **Fully Signed** - All parties have signed
-
-### Storage Organization
-```
-bucket/
-├── {tenant-prefix}/
-│   └── {user-uid}/
-│       └── {uuid}.{ext}
-```
-
-Example: `sanmartin/SoJczPKN4DYfChzWhvbiegSi0422/contract.pdf`
-
+- **Arquitectura**: Unificada con repositorios e interfaces (ver `ARCHITECTURE_UNIFICATION_COMPLETE.md`)
+- **Firmantes Autorizados**: Implementado en Fase 2
+- **Auditoría de Integridad**: Implementado

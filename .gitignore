@@ -6,6 +6,7 @@ dist
 .env
 .env.local
 .env.production
+.env.missing
 
 # Prisma
 /generated/prisma
@@ -16,3 +17,7 @@ dist
 
 # Railway
 .railway
+
+# Test files (mantener para desarrollo)
+# test-*.sh
+# test-*.html

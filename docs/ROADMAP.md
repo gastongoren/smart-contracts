@@ -6,7 +6,7 @@ Plan de desarrollo por fases para el sistema de contratos inteligentes.
 
 ## 📊 Estado Actual
 
-### ✅ Completado (Semanas 1-2)
+### ✅ Completado (Semanas 1-3)
 
 - [x] Backend base con NestJS + TypeScript
 - [x] Base de datos PostgreSQL con Prisma ORM
@@ -30,6 +30,19 @@ Plan de desarrollo por fases para el sistema de contratos inteligentes.
 - [x] Trust score automático para Google Sign-In
 - [x] Device fingerprinting básico
 - [x] Rate limiting básico
+- [x] **Sistema de Auditoría de Integridad** (Semana 2-3)
+  - `GET /contracts/:id/verify` - Verificar integridad del contrato
+  - Re-cálculo de hashes SHA-256 de PDFs y evidencias
+  - Comparación con valores almacenados en base de datos
+  - Verificación de transacciones en blockchain
+  - Reporte completo de integridad (`ContractIntegrityReport`)
+  - Validación de cadena de custodia (chain of custody)
+- [x] **Sistema de Firmantes Autorizados** (Semana 3)
+  - Tabla `required_signers` en base de datos
+  - Validación de autorización al firmar
+  - Validación de KYC antes de firmar
+  - Prevención de doble firma
+  - `GET /contracts/mine` - Ver contratos pendientes de firma
 
 ### 📋 Documentación
 
@@ -41,48 +54,80 @@ Plan de desarrollo por fases para el sistema de contratos inteligentes.
 - [x] `docs/CONTRACT_WORKFLOW.md` - Flujo de trabajo de contratos
 - [x] `docs/USER_REGISTRATION_GUIDE.md` - Guía de registro de usuarios
 - [x] `docs/ENVIRONMENT_VARIABLES.md` - Variables de entorno
+- [x] `docs/AUDIT_INTEGRITY.md` - Sistema de auditoría de integridad
+- [x] `docs/HOW_TO_PRESENT_AUDIT_EVIDENCE.md` - Cómo presentar evidencia de auditoría
+- [x] `docs/HOW_TO_SIGN_CONTRACT.md` - Guía de firma de contratos
+- [x] `docs/SIGNER_IDENTITY_VERIFICATION.md` - Verificación de identidad del firmante
+- [x] `docs/BIOMETRIC_EVIDENCE_AND_PRIVACY.md` - Evidencia biométrica y privacidad
 
 ---
 
-## 🚧 Fase 2: Sistema de Firmantes Autorizados (Semana 3)
+## ✅ Fase 2: Sistema de Firmantes Autorizados + Auditoría de Integridad (Semana 3)
 
-**Objetivo:** Implementar lista de firmantes requeridos y validación de autorización.
+**Objetivo:** Implementar lista de firmantes requeridos, validación de autorización y sistema de auditoría de integridad.
 
-### Backend Tasks
+### Backend Tasks - Firmantes Autorizados
 
-- [ ] **Crear tabla `required_signers`**
+- [x] **Crear tabla `required_signers`**
   - Campos: contractId, email, fullName, documentNumber, role, userId, signed, signedAt
-  - Migración de Prisma
+  - Migración de Prisma (`20241206000000_add_required_signers`)
   - Modelo en `prisma/schema.prisma`
 
-- [ ] **Actualizar `POST /contracts/upload`**
-  - Agregar campo `requiredSigners` al DTO
+- [x] **Actualizar `POST /contracts/upload`**
+  - Agregar campo `requiredSigners` al DTO (`UploadContractDto`)
   - Crear registros en `required_signers` al crear contrato
   - Validar que `requiredSignatures` == length de `requiredSigners`
 
-- [ ] **Actualizar `POST /contracts/:id/sign`**
+- [x] **Actualizar `POST /contracts`**
+  - Agregar campo `requiredSigners` al DTO (`CreateContractDto`)
+  - Crear registros en `required_signers` al crear contrato
+  - Validar que `requiredSignatures` == length de `requiredSigners`
+
+- [x] **Actualizar `POST /contracts/:id/sign`**
   - Validar que `req.user.email` o `req.user.documentNumber` esté en `required_signers`
-  - Verificar que no haya firmado previamente
+  - Verificar que no haya firmado previamente (previene doble firma)
   - Actualizar `required_signers.signed = true` y `signed_at`
   - Verificar que `req.user.verified = true` (KYC completado)
+  - Mensajes de error claros: 403 Forbidden si no está autorizado, 409 Conflict si ya firmó
 
-- [ ] **Nuevo endpoint `GET /contracts/mine`**
+- [x] **Nuevo endpoint `GET /contracts/mine`**
   - Buscar contratos donde el usuario aparece en `required_signers`
   - Filtrar por email, documentNumber, o userId
-  - Mostrar estado: `signed`, `pending`, `not_involved`
+  - Mostrar estado: `signed`, `pending`
+  - Incluir información del contrato y rol del firmante
 
-- [ ] **Tests unitarios**
-  - Validación de firmantes autorizados
-  - Prevención de doble firma
-  - Búsqueda de contratos por usuario
+### Backend Tasks - Auditoría de Integridad
+
+- [x] **Nuevo servicio `ContractAuditService`**
+  - Re-cálculo de hash SHA-256 del PDF desde S3/R2
+  - Re-cálculo de hash SHA-256 de evidencias de firma
+  - Comparación con valores almacenados en base de datos
+  - Decodificación de transacciones blockchain para verificación
+  - Generación de reporte completo de integridad
+
+- [x] **Nuevo endpoint `GET /contracts/:id/verify`**
+  - Retorna `ContractIntegrityReport` con:
+    - Estado general: `ok` o `attention-needed`
+    - Resumen de checks: ok, mismatch, error, skipped
+    - Verificación de hash del PDF
+    - Verificación de hash en blockchain
+    - Verificación de cada firma (hash de evidencia + blockchain)
+    - Cadena de custodia (chain of custody)
+    - Metadata del contrato y evidencia legal
+
+- [x] **Extensión de servicios existentes**
+  - `S3Service.getObjectBuffer()` - Para descargar PDFs como Buffer
+  - `ChainService.decodeTransaction()` - Para leer datos de transacciones blockchain
 
 ### Entregables
 
-- Tabla `required_signers` en producción
-- Endpoints actualizados y documentados en Swagger
-- Tests pasando
+- [x] Tabla `required_signers` en producción
+- [x] Endpoints actualizados y documentados en Swagger
+- [x] Sistema de auditoría completo
+- [x] Tests end-to-end con scripts de prueba
+- [x] Documentación de auditoría y verificación de identidad
 
-**Duración estimada:** 5-7 días
+**Duración real:** 3 días (completado)
 
 ---
 
@@ -482,7 +527,7 @@ Plan de desarrollo por fases para el sistema de contratos inteligentes.
 
 ```
 Semana 1-2:  ✅ MVP Backend (completado)
-Semana 3:    🚧 Firmantes autorizados
+Semana 3:    ✅ Firmantes autorizados + Auditoría de integridad (completado)
 Semana 4:    ⏳ KYC biométrico
 Semana 5:    ⏳ Biometría del dispositivo
 Semana 6-8:  ⏳ Frontend completo
@@ -545,19 +590,22 @@ Semana 11+:  ⏳ Features avanzadas
 
 ## 🎯 Prioridades Inmediatas (Próximas 2 semanas)
 
-### Semana 3: Firmantes Autorizados
+### Semana 3: Firmantes Autorizados + Auditoría - ✅ COMPLETADO
 
 **Prioridad ALTA:**
 
-1. Crear tabla `required_signers`
-2. Actualizar `POST /contracts/upload` con `requiredSigners`
-3. Validar firmantes en `POST /contracts/:id/sign`
-4. Endpoint `GET /contracts/mine`
+1. ✅ Crear tabla `required_signers`
+2. ✅ Actualizar `POST /contracts/upload` con `requiredSigners`
+3. ✅ Actualizar `POST /contracts` con `requiredSigners`
+4. ✅ Validar firmantes en `POST /contracts/:id/sign` (autorización + KYC)
+5. ✅ Endpoint `GET /contracts/mine`
+6. ✅ Sistema de auditoría de integridad (`GET /contracts/:id/verify`)
 
-**Por qué es prioridad:**
-- Cierra el agujero de seguridad actual (cualquiera puede firmar)
-- Permite buscar contratos por usuario
-- Requerido para MVP funcional
+**Por qué era prioridad:**
+- ✅ Cierra el agujero de seguridad (cualquiera puede firmar) - RESUELTO
+- ✅ Permite buscar contratos por usuario - IMPLEMENTADO
+- ✅ Requerido para MVP funcional - COMPLETADO
+- ✅ Auditoría de integridad para evidencia legal - IMPLEMENTADO
 
 ### Semana 4: KYC Biométrico
 
@@ -577,10 +625,13 @@ Semana 11+:  ⏳ Features avanzadas
 
 ## 📈 Métricas de Éxito
 
-### Fase 2 (Firmantes Autorizados)
-- ✅ 0% de firmas no autorizadas
-- ✅ 100% de contratos con firmantes definidos
-- ✅ Usuarios pueden ver sus contratos pendientes
+### Fase 2 (Firmantes Autorizados + Auditoría) - ✅ COMPLETADA
+- ✅ 0% de firmas no autorizadas (validación implementada y probada)
+- ✅ 100% de contratos pueden tener firmantes definidos
+- ✅ Usuarios pueden ver sus contratos pendientes (`GET /contracts/mine`)
+- ✅ Sistema de auditoría de integridad completo
+- ✅ Verificación de hashes en base de datos y blockchain
+- ✅ Reportes de integridad para evidencia legal
 
 ### Fase 3 (KYC)
 - ✅ Tasa de completado de KYC: > 60%
@@ -603,25 +654,26 @@ Semana 11+:  ⏳ Features avanzadas
 
 ### Esta semana:
 
-1. **Desplegar migraciones actuales a Railway**
-   - Nuevos campos en `users`
-   - Campo `requiredSignatures` en `contracts`
+1. **✅ Completado: Fase 2 - Firmantes Autorizados + Auditoría**
+   - ✅ Tabla `required_signers` creada y migrada
+   - ✅ Validación de autorización implementada
+   - ✅ Sistema de auditoría de integridad completo
+   - ✅ Endpoint `GET /contracts/mine` funcionando
+   - ✅ Tests end-to-end pasando
 
-2. **Probar endpoints nuevos de registro**
-   - `POST /auth/register/email`
-   - `POST /auth/register/google`
-
-3. **Iniciar Fase 2: Firmantes autorizados**
-   - Diseñar tabla `required_signers`
-   - Actualizar DTOs
+2. **Iniciar Fase 3: KYC Biométrico**
+   - Evaluar Veriff vs Onfido
+   - Crear cuenta en proveedor seleccionado
+   - Implementar módulo KYC
+   - Endpoints `/kyc/start` y webhook
 
 ### Próxima semana:
 
-1. **Completar Fase 2**
-2. **Iniciar Fase 3: Evaluación de Veriff vs Onfido**
+1. **Completar Fase 3: KYC Biométrico**
+2. **Iniciar Fase 4: Biometría del dispositivo**
 
 ---
 
-**Última actualización:** 12 de Octubre, 2025  
-**Versión:** 1.0
+**Última actualización:** 6 de Diciembre, 2025  
+**Versión:** 1.1
 

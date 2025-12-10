@@ -1,28 +1,28 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { createHash, randomUUID } from 'crypto';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException, Inject } from '@nestjs/common';
 import { ChainService } from '../chain/chain.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Service } from '../s3/s3.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { SignContractDto } from './dto/sign-contract.dto';
 import { UploadContractDto } from './dto/upload-contract.dto';
-
-function toBytes32(hex: string) {
-  if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) throw new Error('Invalid bytes32 hex');
-  return hex;
-}
-function uuidToBytes32(u?: string) {
-  const id = u ?? randomUUID();
-  const h = createHash('sha256').update(id).digest('hex');
-  return ('0x' + h) as string;
-}
+import { RequiredSignerDto } from './dto/required-signer.dto';
+import { ContractAuditService } from './audit/contract-audit.service';
+import { ContractIntegrityReport } from './audit/contract-audit.types';
+import { IContractRepository } from './repositories/contract.repository.interface';
+import { ISignatureRepository } from './repositories/signature.repository.interface';
+import { IRequiredSignerRepository } from './repositories/required-signer.repository.interface';
+import { toBytes32, uuidToBytes32, hashBuffer } from './utils/contract.utils';
 
 @Injectable()
 export class ContractsService {
   constructor(
     private chain: ChainService,
-    private prisma: PrismaService,
+    @Inject('IContractRepository') private contractRepo: IContractRepository,
+    @Inject('ISignatureRepository') private signatureRepo: ISignatureRepository,
+    @Inject('IRequiredSignerRepository') private requiredSignerRepo: IRequiredSignerRepository,
+    private prisma: PrismaService, // Solo para queries complejas de User (findMine)
     private s3: S3Service,
+    private audit: ContractAuditService,
   ) {}
 
   async create(dto: CreateContractDto, user: any, tenantId?: string) {
@@ -42,23 +42,25 @@ export class ContractsService {
       tenantId,
     });
 
-    // Save to database
-    const contract = await this.prisma.contract.create({
-      data: {
-        contractId,
-        tenantId: tenantId || 'core',
-        templateId: dto.templateId,
-        version: dto.version,
-        hashPdf: hashPdf,
-        pointer: dto.pointer,
-        createdBy: user?.uid || 'system',
-        txHash: res.txHash,
-        status: 'created',
-        requiredSignatures: dto.requiredSignatures || 2, // Default to 2 if not specified
-      },
-      include: {
-        signatures: true,
-      },
+    const requiredSignatures = dto.requiredSignatures || (dto.requiredSigners?.length ?? 2);
+    if (dto.requiredSigners && dto.requiredSigners.length !== requiredSignatures) {
+      throw new BadRequestException(
+        `requiredSignatures (${requiredSignatures}) must match the length of requiredSigners (${dto.requiredSigners.length})`
+      );
+    }
+
+    const contract = await this.contractRepo.create({
+      contractId,
+      tenantId: tenantId || 'core',
+      templateId: dto.templateId,
+      version: dto.version,
+      hashPdf: hashPdf,
+      pointer: dto.pointer,
+      createdBy: user?.uid || 'system',
+      txHash: res.txHash,
+      status: 'created',
+      requiredSignatures,
+      requiredSigners: dto.requiredSigners,
     });
 
     return {
@@ -71,19 +73,54 @@ export class ContractsService {
   }
 
   async sign(id: string, dto: SignContractDto, user: any, tenantId?: string) {
-    // Find contract in database
-    const contract = await this.prisma.contract.findUnique({
-      where: { contractId: id },
-      include: { signatures: true },
-    });
+    const contract = await this.contractRepo.findByContractId(id, tenantId);
 
     if (!contract) {
       throw new NotFoundException(`Contract with ID ${id} not found`);
     }
 
+    // Validate signer authorization if requiredSigners exist
+    if (contract.requiredSigners.length > 0) {
+      // Get user from database to check email and documentNumber
+      const dbUser = await this.prisma.user.findFirst({
+        where: {
+          OR: [
+            { uid: user?.uid },
+            { firebaseUid: user?.uid },
+            { email: user?.email },
+          ],
+        },
+      });
+
+      if (!dbUser) {
+        throw new ForbiddenException('User not found in database. Please complete registration first.');
+      }
+
+      if (!dbUser.verified) {
+        throw new ForbiddenException(
+          'KYC verification required before signing contracts. Please complete identity verification first.'
+        );
+      }
+
+      const requiredSigner = await this.requiredSignerRepo.findByEmailOrDocument(
+        dbUser.email || '',
+        dbUser.documentNumber || '',
+        contract.id,
+      );
+
+      if (!requiredSigner) {
+        throw new ForbiddenException(
+          'You are not authorized to sign this contract. ' +
+          `Your email (${dbUser.email}) or DNI (${dbUser.documentNumber}) must be in the required signers list.`
+        );
+      }
+
+      if (requiredSigner.signed) {
+        throw new ConflictException('You have already signed this contract');
+      }
+    }
+
     const hashEvidence = toBytes32(dto.hashEvidenceHex);
-    
-    // Register signature on blockchain
     const res = await this.chain.registerSigned({
       contractIdHex: id,
       signerAddress: dto.signerAddress,
@@ -91,28 +128,50 @@ export class ContractsService {
       tenantId,
     });
 
-    // Save signature to database
-    const signature = await this.prisma.signature.create({
-      data: {
-        contractId: contract.id,
-        signerAddress: dto.signerAddress,
-        signerName: dto.signerName,
-        signerEmail: dto.signerEmail,
-        evidenceHash: hashEvidence,
-        evidence: dto.evidence,
-        txHash: res.txHash,
-      },
+    const signature = await this.signatureRepo.create({
+      contractId: contract.id,
+      signerAddress: dto.signerAddress,
+      signerName: dto.signerName,
+      signerEmail: dto.signerEmail,
+      evidenceHash: hashEvidence,
+      evidence: dto.evidence,
+      txHash: res.txHash,
     });
+
+    if (contract.requiredSigners.length > 0) {
+      const dbUser = await this.prisma.user.findFirst({
+        where: {
+          OR: [
+            { uid: user?.uid },
+            { firebaseUid: user?.uid },
+            { email: user?.email },
+          ],
+        },
+      });
+
+      if (dbUser) {
+        const requiredSigner = contract.requiredSigners.find(
+          (rs) => 
+            rs.email.toLowerCase() === (dbUser.email?.toLowerCase() ?? '') ||
+            rs.documentNumber === dbUser.documentNumber
+        );
+
+        if (requiredSigner) {
+          await this.requiredSignerRepo.update(requiredSigner.id, {
+            signed: true,
+            signedAt: new Date(),
+            userId: dbUser.uid || dbUser.firebaseUid,
+          });
+        }
+      }
+    }
 
     // Update contract status
     const signatureCount = contract.signatures.length + 1;
     const requiredSignatures = contract.requiredSignatures;
     const newStatus = signatureCount >= requiredSignatures ? 'fully_signed' : 'partial_signed';
     
-    await this.prisma.contract.update({
-      where: { id: contract.id },
-      data: { status: newStatus },
-    });
+    await this.contractRepo.update(contract.id, { status: newStatus });
 
     return {
       contractId: contract.contractId,
@@ -123,72 +182,45 @@ export class ContractsService {
     };
   }
 
-  // New: Get contract by ID
   async findOne(contractId: string, tenantId?: string) {
-    const contract = await this.prisma.contract.findFirst({
-      where: {
-        contractId,
-        ...(tenantId && { tenantId }),
-      },
-      include: {
-        signatures: {
-          select: {
-            id: true,
-            signerAddress: true,
-            signerName: true,
-            signerEmail: true,
-            signedAt: true,
-            evidenceHash: true,
-            txHash: true,
-            // evidence is excluded for privacy
-          },
-        },
-      },
-    });
+    const contract = await this.contractRepo.findByContractId(contractId, tenantId);
 
     if (!contract) {
       throw new NotFoundException(`Contract ${contractId} not found`);
     }
 
-    return contract;
+    return {
+      ...contract,
+      signatures: contract.signatures.map((sig) => ({
+        id: sig.id,
+        signerAddress: sig.signerAddress,
+        signerName: sig.signerName,
+        signerEmail: sig.signerEmail,
+        signedAt: sig.signedAt,
+        evidenceHash: sig.evidenceHash,
+        txHash: sig.txHash,
+      })),
+    };
   }
 
-  // New: List contracts
   async findAll(tenantId?: string, options?: { status?: string; page?: number; limit?: number }) {
+    const result = await this.contractRepo.findMany({
+      tenantId,
+      status: options?.status,
+      page: options?.page,
+      limit: options?.limit,
+    });
+
     const page = options?.page || 1;
     const limit = options?.limit || 10;
-    const skip = (page - 1) * limit;
-
-    const where = {
-      ...(tenantId && { tenantId }),
-      ...(options?.status && { status: options.status }),
-    };
-
-    const [contracts, total] = await Promise.all([
-      this.prisma.contract.findMany({
-        where,
-        include: {
-          signatures: {
-            select: {
-              signerAddress: true,
-              signedAt: true,
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.contract.count({ where }),
-    ]);
 
     return {
-      data: contracts,
+      data: result.contracts,
       pagination: {
         page,
         limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        total: result.total,
+        totalPages: Math.ceil(result.total / limit),
       },
     };
   }
@@ -201,8 +233,7 @@ export class ContractsService {
     tenantId?: string,
   ) {
     // 1. Calculate hash of PDF
-    const hashBuffer = createHash('sha256').update(file.buffer).digest();
-    const hashPdf = '0x' + hashBuffer.toString('hex');
+    const hashPdfHex = hashBuffer(file.buffer);
 
     // 2. Upload PDF directly to R2 (server-side)
     const uploadResult = await this.s3.uploadFile({
@@ -213,39 +244,51 @@ export class ContractsService {
       reqTenant: { id: tenantId || 'core' },
     });
 
-    // 3. Generate contract ID
     const contractId = (dto.contractId && /^0x/.test(dto.contractId))
       ? dto.contractId
       : uuidToBytes32(dto.contractId);
 
-    // 4. Register on blockchain
     const txResult = await this.chain.registerCreate({
       contractIdHex: contractId,
       templateId: dto.templateId,
       version: dto.version,
-      hashPdfHex: hashPdf,
+      hashPdfHex: hashPdfHex,
       pointer: uploadResult.key,
       signers: [],
       tenantId,
     });
 
-    // 5. Save to database
-    const contract = await this.prisma.contract.create({
-      data: {
-        contractId,
-        tenantId: tenantId || 'core',
-        templateId: dto.templateId,
-        version: dto.version,
-        hashPdf: hashPdf,
-        pointer: uploadResult.key,
-        createdBy: user?.uid || 'system',
-        txHash: txResult.txHash,
-        status: 'created',
-        requiredSignatures: dto.requiredSignatures || 2, // Default to 2 if not specified
-      },
-      include: {
-        signatures: true,
-      },
+    let parsedRequiredSigners: RequiredSignerDto[] | undefined;
+    if (dto.requiredSigners) {
+      if (typeof dto.requiredSigners === 'string') {
+        try {
+          parsedRequiredSigners = JSON.parse(dto.requiredSigners);
+        } catch (error) {
+          throw new BadRequestException(`Invalid JSON in requiredSigners: ${error.message}`);
+        }
+      } else {
+        parsedRequiredSigners = dto.requiredSigners as any;
+      }
+    }
+
+    const requiredSignatures = dto.requiredSignatures || (parsedRequiredSigners?.length ?? 2);
+    if (parsedRequiredSigners && parsedRequiredSigners.length !== requiredSignatures) {
+      throw new BadRequestException(
+        `requiredSignatures (${requiredSignatures}) must match the length of requiredSigners (${parsedRequiredSigners.length})`
+      );
+    }
+    const contract = await this.contractRepo.create({
+      contractId,
+      tenantId: tenantId || 'core',
+      templateId: dto.templateId,
+      version: dto.version,
+      hashPdf: hashPdfHex,
+      pointer: uploadResult.key,
+      createdBy: user?.uid || 'system',
+      txHash: txResult.txHash,
+      status: 'created',
+      requiredSignatures,
+      requiredSigners: parsedRequiredSigners,
     });
 
     return {
@@ -253,26 +296,19 @@ export class ContractsService {
       txHash: contract.txHash,
       id: contract.id,
       status: contract.status,
-      hashPdf: hashPdf,
+      hashPdf: hashPdfHex,
       pdfUrl: uploadResult.url,
       pdfKey: uploadResult.key,
       createdAt: contract.createdAt,
     };
   }
 
-  // Generate temporary download URL for contract PDF
   async generateDownloadUrl(
     contractId: string,
     tenantId?: string,
     expiresIn: number = 3600,
   ): Promise<string> {
-    // Find contract
-    const contract = await this.prisma.contract.findFirst({
-      where: {
-        contractId,
-        tenantId: tenantId || 'core',
-      },
-    });
+    const contract = await this.contractRepo.findByContractId(contractId, tenantId || 'core');
 
     if (!contract) {
       throw new NotFoundException(`Contract ${contractId} not found`);
@@ -340,6 +376,68 @@ export class ContractsService {
       status: contract.status,
       signatures: contract.signatures.length,
     };
+  }
+
+  async verifyIntegrity(contractId: string, tenantId?: string): Promise<ContractIntegrityReport> {
+    return this.audit.verify(contractId, tenantId);
+  }
+
+  // Get contracts where user is a required signer
+  async findMine(user: any, tenantId?: string) {
+    // Get user from database
+    const dbUser = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { uid: user?.uid },
+          { firebaseUid: user?.uid },
+          { email: user?.email },
+        ],
+      },
+    });
+
+    if (!dbUser) {
+      return [];
+    }
+
+    const whereConditions: any[] = [];
+    if (dbUser.email) {
+      whereConditions.push({ email: dbUser.email });
+    }
+    if (dbUser.documentNumber) {
+      whereConditions.push({ documentNumber: dbUser.documentNumber });
+    }
+    if (dbUser.uid || dbUser.firebaseUid) {
+      whereConditions.push({ userId: dbUser.uid || dbUser.firebaseUid });
+    }
+
+    if (whereConditions.length === 0) {
+      return [];
+    }
+
+    const requiredSigners = await this.requiredSignerRepo.findByUser(
+      dbUser.email,
+      dbUser.documentNumber,
+      dbUser.uid || dbUser.firebaseUid,
+    );
+
+    const filtered = tenantId
+      ? requiredSigners.filter((rs) => rs.contract.tenantId === tenantId)
+      : requiredSigners;
+
+    return filtered.map((rs) => ({
+      contractId: rs.contract.contractId,
+      tenantId: rs.contract.tenantId,
+      templateId: rs.contract.templateId,
+      version: rs.contract.version,
+      status: rs.contract.status,
+      requiredSignatures: rs.contract.requiredSignatures,
+      currentSignatures: rs.contract.signatures.length,
+      myStatus: rs.signed ? 'signed' : 'pending',
+      signedAt: rs.signedAt,
+      role: rs.role,
+      createdAt: rs.contract.createdAt,
+      contractCreatedAt: rs.contract.createdAt,
+    }));
   }
 }
 

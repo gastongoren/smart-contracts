@@ -8,7 +8,6 @@ export function buildTenantRegistry() {
       branding: { name: 'Smart Core', primaryColor: '#0ea5e9' },
       overrides: {
         // opcional: s3Bucket: 'smart-uploads-dev',
-        // opcional: chainRegistryAddress: '0x000...'
       }
     }
   ]);

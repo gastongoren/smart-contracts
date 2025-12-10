@@ -1,11 +1,13 @@
 import { Injectable, Scope, Inject, Optional } from '@nestjs/common';
+import { Readable } from 'stream';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import { InMemoryTenantRegistry, resolveTenantConfig } from '../tenant/tenant.registry';
+import { IStorageService, UploadFileParams, UploadFileResult, PresignedUrlParams, PresignedPutUrlResult, PresignedGetUrlParams, PresignedGetUrlResult, GetObjectBufferParams } from './interfaces/storage.service.interface';
 
 @Injectable({ scope: Scope.DEFAULT })
-export class S3Service {
+export class S3Service implements IStorageService {
   private client: S3Client | null = null;
   private base = {
     s3Bucket: process.env.S3_BUCKET!,
@@ -92,13 +94,7 @@ export class S3Service {
     }
   }
 
-  // reqTenant: pasar desde controller (req.tenant)
-  async createPresignedPutUrl(params: {
-    contentType: string;
-    ext?: string;
-    userId?: string;
-    reqTenant?: { id: string };
-  }) {
+  async createPresignedPutUrl(params: PresignedUrlParams & { contentType: string }): Promise<PresignedPutUrlResult> {
     const { contentType, ext = '', userId, reqTenant } = params;
     const tenantCfg = resolveTenantConfig(this.base, this.registry?.getTenant(reqTenant?.id ?? 'core'));
     const key = `${tenantCfg.s3Prefix}${userId ? `${userId}/` : ''}${randomUUID()}${ext}`;
@@ -137,12 +133,7 @@ export class S3Service {
     }
   }
 
-  // Generate presigned GET URL for downloading files
-  async createPresignedGetUrl(params: {
-    key: string;
-    expiresIn?: number;
-    reqTenant?: { id: string };
-  }): Promise<{ url: string; expiresIn: number; bucket: string }> {
+  async createPresignedGetUrl(params: PresignedGetUrlParams): Promise<PresignedGetUrlResult> {
     const { key, expiresIn = 3600, reqTenant } = params;
     const tenantCfg = resolveTenantConfig(this.base, this.registry?.getTenant(reqTenant?.id ?? 'core'));
 
@@ -166,6 +157,55 @@ export class S3Service {
       console.warn('⚠️  S3 presigned GET URL generation failed, returning mock URL');
       const mockUrl = `https://s3.${process.env.AWS_REGION}.amazonaws.com/${tenantCfg.s3Bucket}/${key}`;
       return { url: mockUrl, expiresIn, bucket: tenantCfg.s3Bucket };
+    }
+  }
+
+  async getObjectBuffer(params: GetObjectBufferParams): Promise<Buffer> {
+    const { key, reqTenant } = params;
+    const tenantCfg = resolveTenantConfig(this.base, this.registry?.getTenant(reqTenant?.id ?? 'core'));
+
+    if (!this.client) {
+      throw new Error('S3Service: Download not available - no S3 client configured');
+    }
+
+    try {
+      const response = await this.client.send(
+        new GetObjectCommand({
+          Bucket: tenantCfg.s3Bucket,
+          Key: key,
+        }),
+      );
+
+      const body = response.Body;
+      if (!body) {
+        throw new Error('S3Service: Empty response body when downloading object');
+      }
+
+      if (Buffer.isBuffer(body)) {
+        return body;
+      }
+      if (typeof body === 'string') {
+        return Buffer.from(body);
+      }
+      if (typeof (body as any).transformToByteArray === 'function') {
+        const byteArray = await (body as any).transformToByteArray();
+        return Buffer.from(byteArray);
+      }
+      if (typeof (body as any).transformToString === 'function') {
+        const str = await (body as any).transformToString();
+        return Buffer.from(str);
+      }
+      if (body instanceof Readable) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of body) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        return Buffer.concat(chunks);
+      }
+
+      throw new Error('S3Service: Unsupported response body type');
+    } catch (error) {
+      throw new Error(`S3Service: Failed to download object "${key}": ${error.message}`);
     }
   }
 }
