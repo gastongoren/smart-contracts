@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { ChainService } from '../chain/chain.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -71,6 +71,25 @@ export class ContractsService {
   }
 
   async sign(id: string, dto: SignContractDto, user: any, tenantId?: string) {
+    // Find user in database to check KYC status
+    const dbUser = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { uid: user.uid },
+          { firebaseUid: user.uid },
+        ],
+      },
+    });
+
+    if (!dbUser) {
+      throw new NotFoundException('User not found in database');
+    }
+
+    // Verify KYC is completed
+    if (!dbUser.verified) {
+      throw new ForbiddenException('KYC verification required before signing contracts. Please complete identity verification first.');
+    }
+
     // Find contract in database
     const contract = await this.prisma.contract.findUnique({
       where: { contractId: id },

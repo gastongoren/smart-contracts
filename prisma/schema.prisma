@@ -11,20 +11,21 @@ datasource db {
 }
 
 model Contract {
-  id                   String      @id @default(uuid())
-  contractId           String      @unique // bytes32 hex from blockchain
+  id                   String           @id @default(uuid())
+  contractId           String           @unique // bytes32 hex from blockchain
   tenantId             String
   templateId           Int
   version              Int
-  hashPdf              String      // bytes32 hex - hash of the PDF
-  pointer              String?     // S3 key or IPFS hash
-  createdBy            String      // Firebase UID
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
-  status               String      @default("created") // draft, created, partial_signed, fully_signed
-  txHash               String?     // Blockchain transaction hash
-  requiredSignatures   Int         @default(2) // Number of signatures required for completion
+  hashPdf              String           // bytes32 hex - hash of the PDF
+  pointer              String?          // S3 key or IPFS hash
+  createdBy            String           // Firebase UID
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  status               String           @default("created") // draft, created, partial_signed, fully_signed
+  txHash               String?          // Blockchain transaction hash
+  requiredSignatures   Int              @default(2) // Number of signatures required for completion
   signatures           Signature[]
+  requiredSigners      RequiredSigner[]
 
   @@index([tenantId])
   @@index([status])
@@ -106,6 +107,29 @@ model User {
   @@index([email])
   @@index([documentNumber])
   @@map("users")
+}
+
+model RequiredSigner {
+  id             String    @id @default(uuid())
+  contractId     String
+  contract       Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  email          String
+  fullName       String
+  documentNumber String
+  role           String?   // 'SELLER', 'BUYER', etc.
+  userId         String?   // Firebase UID (null until signed)
+  signed         Boolean   @default(false)
+  signedAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([contractId])
+  @@index([email])
+  @@index([documentNumber])
+  @@index([userId])
+  @@unique([contractId, email])
+  @@unique([contractId, documentNumber])
+  @@map("required_signers")
 }
 
 model AuditLog {

@@ -7,10 +7,12 @@ import { S3Module } from './s3/s3.module';
 import { ContractsModule } from './contracts/contracts.module';
 import { ChainModule } from './chain/chain.module';
 import { TenantModule } from './tenant/tenant.module';
+import { KycModule } from './kyc/kyc.module';
 import { HealthController } from './health/health.controller';
 import { MeController } from './me/me.controller';
 import { S3Controller } from './s3/s3.controller';
 import { ContractsController } from './contracts/contracts.controller';
+import { KycController } from './kyc/kyc.controller';
 
 @Module({
   imports: [
@@ -45,6 +47,7 @@ import { ContractsController } from './contracts/contracts.controller';
     S3Module,
     ChainModule,
     ContractsModule,
+    KycModule,
   ],
   controllers: [HealthController, MeController, S3Controller, ContractsController],
 })

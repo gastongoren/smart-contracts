@@ -48,16 +48,18 @@ TENANT_DEFAULT_ID="core"
 CORS_ORIGINS="http://localhost:3000,https://yourapp.com"
 ```
 
-## KYC Configuration (Optional - for future)
+## KYC Configuration (Veriff)
 
 ```bash
-# Veriff
+# Veriff API credentials (required for KYC verification)
 VERIFF_API_KEY="your-veriff-api-key"
 VERIFF_API_SECRET="your-veriff-secret"
 
-# Or Onfido
-ONFIDO_API_KEY="your-onfido-api-key"
+# Application URL (for webhook callbacks)
+APP_URL="https://yourapp.com"  # Used for webhook URL: ${APP_URL}/api/kyc/webhook
 ```
+
+**Note:** If `VERIFF_API_KEY` and `VERIFF_API_SECRET` are not set, the system will use mock sessions for development.
 
 ## reCAPTCHA (Optional - for future)
 
@@ -108,9 +110,11 @@ For Railway deployment, add these variables in the Railway dashboard:
 - `CHAIN_PRIVATE_KEY`
 - `CHAIN_REGISTRY_ADDRESS`
 
-### Optional Variables (for future features)
+### Optional Variables
 
-- `VERIFF_API_KEY`
-- `RECAPTCHA_SECRET_KEY`
-- `TWILIO_ACCOUNT_SID`
+- `VERIFF_API_KEY` (required for production KYC)
+- `VERIFF_API_SECRET` (required for production KYC)
+- `APP_URL` (required for webhook callbacks)
+- `RECAPTCHA_SECRET_KEY` (for future)
+- `TWILIO_ACCOUNT_SID` (for future)
 
