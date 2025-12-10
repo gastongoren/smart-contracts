@@ -37,7 +37,6 @@ import { ContractsController } from './contracts/contracts.controller';
           overrides: {
             s3Prefix: 'sanmartin/',
             // s3Bucket: 'sanmartin-uploads',  // Opcional: bucket específico
-            // chainRegistryAddress: '0x1234...'  // Opcional: registry específico
           }
         }
       ]

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards, Req, UseInterceptors, UploadedFile, BadRequestException, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards, Req, UseInterceptors, UploadedFile, BadRequestException, Res, ValidationPipe, UsePipes } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery, ApiSecurity, ApiConsumes } from '@nestjs/swagger';
@@ -6,6 +6,7 @@ import { FirebaseGuard } from '../auth/firebase.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { ContractsService } from './contracts.service';
+import { ContractIntegrityReport } from './audit/contract-audit.types';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { SignContractDto } from './dto/sign-contract.dto';
 import { UploadContractDto } from './dto/upload-contract.dto';
@@ -23,6 +24,7 @@ export class ContractsController {
   @Roles('ADMIN', 'SELLER')
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file'))
+  @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false, transform: true }))
   @ApiOperation({ 
     summary: 'Upload PDF and create contract (RECOMMENDED)',
     description: '🚀 ONE-STEP: Upload PDF → Calculate hash → Upload to R2 → Register on blockchain → Save to DB. This is the recommended way to create contracts.',
@@ -47,7 +49,7 @@ export class ContractsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Forbidden - insufficient role' })
   async uploadAndCreate(
-    @Body() dto: UploadContractDto,
+    @Body() body: any,
     @UploadedFile() file: Express.Multer.File,
     @Req() req: any,
   ) {
@@ -57,11 +59,35 @@ export class ContractsController {
     if (file.mimetype !== 'application/pdf') {
       throw new BadRequestException('Only PDF files are allowed');
     }
+
+    let requiredSigners: any = undefined;
+    if (body.requiredSigners) {
+      if (typeof body.requiredSigners === 'string') {
+        try {
+          requiredSigners = JSON.parse(body.requiredSigners);
+        } catch (error) {
+          throw new BadRequestException(`Invalid JSON in requiredSigners: ${error.message}`);
+        }
+      } else {
+        requiredSigners = body.requiredSigners;
+      }
+    }
+
+    const dto: UploadContractDto = {
+      templateId: parseInt(body.templateId),
+      version: parseInt(body.version),
+      requiredSignatures: body.requiredSignatures ? parseInt(body.requiredSignatures) : undefined,
+      requiredSigners: requiredSigners,
+      contractId: body.contractId,
+      file: file,
+    };
+
     return this.svc.uploadAndCreate(dto, file, req.user, req.tenant?.id);
   }
 
   @Post()
   @Roles('ADMIN', 'SELLER')
+  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: false, transform: true }))
   @ApiOperation({ 
     summary: 'Create a new contract (manual)',
     description: 'Creates a new smart contract with pre-uploaded PDF. You need to upload PDF and calculate hash manually. Use POST /contracts/upload for easier workflow.',
@@ -84,6 +110,53 @@ export class ContractsController {
   @ApiResponse({ status: 403, description: 'Forbidden - insufficient role' })
   create(@Body() body: CreateContractDto, @Req() req: any) {
     return this.svc.create(body, req.user, req.tenant?.id);
+  }
+
+  @Get('mine')
+  @Roles('ADMIN', 'SELLER', 'BUYER')
+  @ApiOperation({ 
+    summary: 'Get my contracts',
+    description: 'Get all contracts where the current user is a required signer. Shows contract status and whether you have signed it.',
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'List of contracts where user is a required signer',
+    schema: {
+      example: [
+        {
+          contractId: '0x39828877b3f9fcf10367f04ac81a9f141c7f40a8f811cb1787ad9f3a53345469',
+          tenantId: 'core',
+          templateId: 5,
+          version: 1,
+          status: 'partial_signed',
+          requiredSignatures: 2,
+          currentSignatures: 1,
+          myStatus: 'pending',
+          signedAt: null,
+          role: 'BUYER',
+          createdAt: '2025-10-11T14:11:46.036Z',
+          contractCreatedAt: '2025-10-11T14:11:46.036Z',
+        },
+        {
+          contractId: '0x11f940016530d405a18aa8189fc7ba405f374b3ed95ce955e0c71de17e5ff1ad',
+          tenantId: 'core',
+          templateId: 1,
+          version: 1,
+          status: 'fully_signed',
+          requiredSignatures: 2,
+          currentSignatures: 2,
+          myStatus: 'signed',
+          signedAt: '2025-10-11T14:25:25.658Z',
+          role: 'SELLER',
+          createdAt: '2025-10-11T14:11:46.036Z',
+          contractCreatedAt: '2025-10-11T14:11:46.036Z',
+        },
+      ],
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  findMine(@Req() req: any) {
+    return this.svc.findMine(req.user, req.tenant?.id);
   }
 
   @Get()
@@ -248,6 +321,54 @@ export class ContractsController {
     @Req() req: any,
   ) {
     return this.svc.generatePublicUrl(id, req.tenant?.id, dto.expiresIn);
+  }
+
+  @Get(':id/verify')
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary: 'Verify contract integrity',
+    description: 'Recomputes contract and signature hashes, compares against database and blockchain records, and returns a detailed integrity report.',
+  })
+  @ApiParam({ name: 'id', description: 'Contract ID (bytes32 hex)', example: '0x39828877b3f9fcf10367f04ac81a9f141c7f40a8f811cb1787ad9f3a53345469' })
+  @ApiResponse({
+    status: 200,
+    description: 'Integrity report generated',
+    schema: {
+      example: {
+        contractId: '0x398288...',
+        status: 'ok',
+        summary: {
+          ok: 4,
+          mismatch: 0,
+          error: 0,
+          skipped: 1,
+          totalChecks: 5,
+        },
+        issues: [],
+        contract: {
+          pdfHash: { status: 'ok', expected: '0xabc...', actual: '0xabc...' },
+          blockchain: { status: 'ok', expected: '0xabc...', actual: '0xabc...' },
+        },
+        signatures: [
+          {
+            signatureId: 'd83adf88-163d-445a-aca2-8bbc83c0e97d',
+            signerAddress: '0x742d35...',
+            evidenceHash: '0xbbbb...',
+            checks: {
+              evidenceHash: { status: 'ok', expected: '0xbbbb...', actual: '0xbbbb...' },
+              blockchain: { status: 'ok', expected: '0xbbbb...', actual: '0xbbbb...' },
+            },
+          },
+        ],
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Contract not found' })
+  async verify(
+    @Param('id') id: string,
+    @Req() req: any,
+  ): Promise<ContractIntegrityReport> {
+    return this.svc.verifyIntegrity(id, req.tenant?.id);
   }
 }
 

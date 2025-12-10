@@ -1,5 +1,7 @@
-import { IsNumber, IsString, Matches, IsOptional, Min, Max } from 'class-validator';
+import { IsNumber, IsString, Matches, IsOptional, Min, Max, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RequiredSignerDto } from './required-signer.dto';
 
 export class CreateContractDto {
   @ApiPropertyOptional({
@@ -48,8 +50,8 @@ export class CreateContractDto {
   pointer?: string;
 
   @ApiPropertyOptional({
-    description: 'Number of signatures required for completion (default: 2)',
-    example: 3,
+    description: 'Number of signatures required for completion (default: 2). Must match the length of requiredSigners if provided.',
+    example: 2,
     minimum: 1,
     maximum: 10,
   })
@@ -58,5 +60,19 @@ export class CreateContractDto {
   @Min(1)
   @Max(10)
   requiredSignatures?: number;
+
+  @ApiPropertyOptional({
+    description: 'List of required signers for this contract. If provided, requiredSignatures must equal the length of this array.',
+    type: [RequiredSignerDto],
+    example: [
+      { email: 'vendedor@example.com', fullName: 'Juan Pérez', documentNumber: '12345678', role: 'SELLER' },
+      { email: 'comprador@example.com', fullName: 'María García', documentNumber: '87654321', role: 'BUYER' },
+    ],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RequiredSignerDto)
+  requiredSigners?: RequiredSignerDto[];
 }
 

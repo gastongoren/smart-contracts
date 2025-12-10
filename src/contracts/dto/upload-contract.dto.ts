@@ -1,5 +1,7 @@
-import { IsNumber, IsOptional, IsString, Min, Max } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Min, Max, IsArray, ValidateNested } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RequiredSignerDto } from './required-signer.dto';
 
 export class UploadContractDto {
   @ApiProperty({
@@ -21,8 +23,8 @@ export class UploadContractDto {
   version!: number;
 
   @ApiPropertyOptional({
-    description: 'Number of signatures required for completion (default: 2)',
-    example: 3,
+    description: 'Number of signatures required for completion (default: 2). Must match the length of requiredSigners if provided.',
+    example: 2,
     minimum: 1,
     maximum: 10,
   })
@@ -31,6 +33,22 @@ export class UploadContractDto {
   @Min(1)
   @Max(10)
   requiredSignatures?: number;
+
+  @ApiPropertyOptional({
+    description: 'List of required signers for this contract (JSON string). If provided, requiredSignatures must equal the length of this array. Example: [{"email":"vendedor@example.com","fullName":"Juan Pérez","documentNumber":"12345678","role":"SELLER"}]',
+    type: String,
+    example: '[{"email":"vendedor@example.com","fullName":"Juan Pérez","documentNumber":"12345678","role":"SELLER"},{"email":"comprador@example.com","fullName":"María García","documentNumber":"87654321","role":"BUYER"}]',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    // Allow both string and array, transform array to string for consistency
+    if (Array.isArray(value)) {
+      return JSON.stringify(value);
+    }
+    return value;
+  })
+  @IsString()
+  requiredSigners?: string; // JSON string, will be parsed in service
 
   @ApiPropertyOptional({
     description: 'Optional custom contract ID',
